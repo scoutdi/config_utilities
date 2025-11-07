@@ -38,11 +38,69 @@
 #include <gtest/gtest.h>
 
 #include "config_utilities/config.h"
+#include "config_utilities/internal/yaml_utils.h"
 #include "config_utilities/parsing/yaml.h"
 #include "config_utilities/test/default_config.h"
 #include "config_utilities/test/utils.h"
 
 namespace config::test {
+
+YAML::Node createData() {
+  YAML::Node data;
+  data["a"]["b"]["c"] = 1;
+  data["a"]["b"]["d"] = "test";
+  data["a"]["b"]["e"] = std::vector<float>({1, 2, 3});
+  data["a"]["b"]["f"] = std::map<std::string, int>({{"1_str", 1}, {"2_str", 2}});
+  data["a"]["g"] = 3;
+  return data;
+}
+
+TEST(YamlParsing, lookupNamespace) {
+  YAML::Node data = createData();
+
+  expectEqual(data, data);
+
+  YAML::Node data_1 = YAML::Clone(data);
+  data_1["a"]["b"]["c"] = 2;
+  EXPECT_FALSE(internal::isEqual(data, data_1));
+
+  YAML::Node data_2 = internal::lookupNamespace(data, "");
+  // NOTE(lschmid): lookupNamespace returns a pointer, so this should be identity.
+  EXPECT_TRUE(data == data_2);
+  expectEqual(data, data_2);
+
+  YAML::Node b = internal::lookupNamespace(data, "a/b");
+  // NOTE(lschmid): lookupNamespace returns a pointer, so this should be identity.
+  EXPECT_TRUE(b == data["a"]["b"]);
+  expectEqual(b, data["a"]["b"]);
+
+  YAML::Node b2 = internal::lookupNamespace(YAML::Clone(data), "a/b");
+
+  expectEqual(b2, data["a"]["b"]);
+
+  YAML::Node c = internal::lookupNamespace(data, "a/b/c");
+  EXPECT_TRUE(c.IsScalar());
+  EXPECT_EQ(c.as<int>(), 1);
+
+  YAML::Node invalid = internal::lookupNamespace(data, "a/b/c/d");
+  EXPECT_FALSE(invalid.IsDefined());
+  EXPECT_FALSE(static_cast<bool>(invalid));
+
+  // Make sure the input node is not modified.
+  expectEqual(data, createData());
+}
+
+TEST(YamlParsing, moveDownNamespace) {
+  YAML::Node data = createData();
+
+  internal::moveDownNamespace(data, "");
+  expectEqual(data, createData());
+
+  YAML::Node expected_data;
+  expected_data["a"]["b"]["c"] = createData();
+  internal::moveDownNamespace(data, "a/b/c");
+  expectEqual(data, expected_data);
+}
 
 TEST(YamlParsing, parsefromYaml) {
   DefaultConfig config;
@@ -120,26 +178,6 @@ sub_ns:
   EXPECT_EQ(errors[4]->message(), "Name 'D' is out of bounds for enum with names ['A', 'B', 'C']");
 }
 
-TEST(YamlParsing, overflowConversionFailure) {
-  const auto node = YAML::Load(R"yaml({under: -1, over: 256})yaml");
-
-  {  // values below [0, 255] cause errors
-    uint8_t value = 0;
-    std::string error;
-    EXPECT_FALSE(internal::YamlParser::fromYaml(node, "under", value, "", error));
-    EXPECT_EQ(value, 0u);
-    EXPECT_EQ(error, "Value '-1' underflows storage min of '0'.");
-  }
-
-  {  // values above [0, 255] cause errors
-    uint8_t value = 0;
-    std::string error;
-    EXPECT_FALSE(internal::YamlParser::fromYaml(node, "over", value, "", error));
-    EXPECT_EQ(value, 0u);
-    EXPECT_EQ(error, "Value '256' overflows storage max of '255'.");
-  }
-}
-
 TEST(YamlParsing, setValues) {
   YAML::Node data = DefaultConfig::modifiedValues();
   DefaultConfig config;
@@ -182,7 +220,7 @@ TEST(YamlParsing, getValues) {
   EXPECT_EQ(meta_data.errors.size(), 0ul);
   meta_data.performOnAll([](const internal::MetaData& d) {
     for (const auto& field : d.field_infos) {
-      EXPECT_TRUE(field.isDefault());
+      EXPECT_TRUE(field.is_default);
     }
   });
   EXPECT_EQ(meta_data.name, "DefaultConfig");
@@ -195,7 +233,7 @@ TEST(YamlParsing, getValues) {
   EXPECT_EQ(meta_data.errors.size(), 0ul);
   meta_data.performOnAll([](const internal::MetaData& d) {
     for (const auto& field : d.field_infos) {
-      EXPECT_FALSE(field.isDefault());
+      EXPECT_FALSE(field.is_default);
     }
   });
 }
@@ -239,16 +277,6 @@ TEST(YamlParsing, emptyCollections) {
   const std::string result = out.c_str();
   const std::string expected = "{empty_map: {}, empty_set: [], empty_vector: [], empty_list: []}";
   EXPECT_EQ(expected, result);
-}
-
-TEST(YamlParsing, updateCorrect) {
-  SubSubConfig config;
-  // configs that don't pass checks should fail to update underlying config
-  EXPECT_FALSE(updateFromYaml(config, YAML::Load("i: -1")));
-  EXPECT_EQ(config.i, 1);
-  // configs that 't pass checks should update underlying config
-  EXPECT_TRUE(updateFromYaml(config, YAML::Load("i: 5")));
-  EXPECT_EQ(config.i, 5);
 }
 
 }  // namespace config::test

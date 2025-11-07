@@ -1,10 +1,9 @@
 include(GNUInstallDirs)
 install(
-  TARGETS ${PROJECT_NAME} composite-configs
+  TARGETS ${PROJECT_NAME}
   EXPORT config_utilities-targets
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(
   EXPORT config_utilities-targets
@@ -24,8 +23,3 @@ write_basic_package_version_file(
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/config_utilitiesConfig.cmake
               ${CMAKE_CURRENT_BINARY_DIR}/config_utilitiesConfigVersion.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/config_utilities)
-
-find_package(ament_cmake_core QUIET)
-if (${ament_cmake_core_FOUND})
-  ament_package()
-endif()

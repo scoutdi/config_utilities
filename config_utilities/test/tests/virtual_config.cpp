@@ -86,43 +86,6 @@ void declare_config(Derived2A::Config& config) {
   config::field(config.i, "i");
 }
 
-struct Derived2WithComplexParam : public Base2 {
-  struct Config {
-    int i = 0;
-  };
-  explicit Derived2WithComplexParam(const Config& config, std::shared_ptr<int> i) : config_(config), i_(i) {}
-  std::string name() const override { return "Derived2WithComplexParam"; }
-  const Config config_;
-  const std::shared_ptr<int> i_;
-  inline static const auto registration_ =
-      config::RegistrationWithConfig<Base2, Derived2WithComplexParam, Config, std::shared_ptr<int>>(
-          "Derived2WithComplexParam");
-};
-
-void declare_config(Derived2WithComplexParam::Config& config) {
-  config::name("Derived2WithComplexParam");
-  config::field(config.i, "i");
-}
-
-struct Derived2WithMoveOnlyParam : public Base2 {
-  struct Config {
-    int i = 0;
-  };
-  explicit Derived2WithMoveOnlyParam(const Config& config, std::unique_ptr<int> i)
-      : config_(config), i_(std::move(i)) {}
-  std::string name() const override { return "Derived2WithMoveOnlyParam"; }
-  const Config config_;
-  const std::unique_ptr<int> i_;
-  inline static const auto registration_ =
-      config::RegistrationWithConfig<Base2, Derived2WithMoveOnlyParam, Config, std::unique_ptr<int>>(
-          "Derived2WithMoveOnlyParam");
-};
-
-void declare_config(Derived2WithMoveOnlyParam::Config& config) {
-  config::name("Derived2WithMoveOnlyParam");
-  config::field(config.i, "i");
-}
-
 struct NotDerivedFromBase2 {
   struct Config {
     bool b = false;
@@ -152,69 +115,6 @@ void declare_config(ObjectWithBase::Config& config) {
   config::field(config.d, "d", "kg/m^3");
   config::check(config.d, config::CheckMode::GE, 0.0, "d");
   config::field(config.base_config, "base_config", false);
-}
-
-struct ObjectWithOptionalConfigs {
-  struct Config {
-    std::vector<VirtualConfig<Base2, true>> modules;
-  } const config;
-
-  explicit ObjectWithOptionalConfigs(const Config& config) : config(config::checkValid(config)) {
-    for (const auto& base_config : config.modules) {
-      if (base_config) {
-        valid.emplace_back(base_config.create());
-      }
-    }
-  }
-
-  std::vector<std::unique_ptr<Base2>> valid;
-};
-
-void declare_config(ObjectWithOptionalConfigs::Config& config) {
-  config::name("ObjectWithOptionalConfigs");
-  config::field(config.modules, "modules");
-}
-
-struct DefaultedOptional {
-  struct Config {
-    int foo = 3;
-  } const config;
-  explicit DefaultedOptional(const Config& config) : config(config) {}
-};
-
-void declare_config(DefaultedOptional::Config& config) {
-  name<DefaultedOptional::Config>();
-  field(config.foo, "foo");
-}
-
-struct ParentOfDefaultedOptional {
-  struct Config {
-    VirtualConfig<DefaultedOptional> child{DefaultedOptional::Config()};
-  } const config;
-
-  explicit ParentOfDefaultedOptional(const Config& config) : config(config), child(config.child.create()) {}
-  std::unique_ptr<DefaultedOptional> child;
-};
-
-void declare_config(ParentOfDefaultedOptional::Config& config) {
-  name<ParentOfDefaultedOptional::Config>();
-  field(config.child, "child");
-  config.child.setOptional();
-}
-
-struct GrandparentOfDefaultedOptional {
-  struct Config {
-    VirtualConfig<ParentOfDefaultedOptional> child;
-  } const config;
-
-  explicit GrandparentOfDefaultedOptional(const Config& config) : config(config), child(config.child.create()) {}
-  std::unique_ptr<ParentOfDefaultedOptional> child;
-};
-
-void declare_config(GrandparentOfDefaultedOptional::Config& config) {
-  name<ParentOfDefaultedOptional::Config>();
-  field(config.child, "child");
-  config.child.setOptional();
 }
 
 TEST(VirtualConfig, isSet) {
@@ -325,94 +225,18 @@ TEST(VirtualConfig, assignConfig) {
 }
 
 TEST(VirtualConfig, create) {
-  {
-    VirtualConfig<Base2> config;
-    std::unique_ptr<Base2> object = config.create();
-    EXPECT_FALSE(object);
-  }
-  {
-    YAML::Node data;
-    data["type"] = "Derived2";
-    data["f"] = 1.f;
-    auto config = fromYaml<VirtualConfig<Base2>>(data);
-    auto object = config.create();
-    EXPECT_TRUE(object);
-    EXPECT_EQ(object->name(), "Derived2");
-    EXPECT_EQ(dynamic_cast<Derived2*>(object.get())->config_.f, 1.f);
-  }
-  {
-    // Create an object with a parameter
-    YAML::Node data;
-    data["type"] = "Derived2WithComplexParam";
-    data["i"] = 1234;
-    auto config = fromYaml<VirtualConfig<Base2>>(data);
-    {
-      // Create by l-value
-      auto i = std::make_shared<int>(5678);
-      auto object = config.create(i);
-      EXPECT_TRUE(object);
-      EXPECT_EQ(object->name(), "Derived2WithComplexParam");
-      auto ptr = dynamic_cast<Derived2WithComplexParam*>(object.get());
-      ASSERT_NE(ptr, nullptr);
-      EXPECT_EQ(ptr->config_.i, 1234);
-      EXPECT_EQ(*ptr->i_, 5678);
-    }
-    {
-      // Create by const l-value
-      const auto i = std::make_shared<int>(5678);
-      auto object = config.create(i);
-      EXPECT_TRUE(object);
-      EXPECT_EQ(object->name(), "Derived2WithComplexParam");
-      auto ptr = dynamic_cast<Derived2WithComplexParam*>(object.get());
-      ASSERT_NE(ptr, nullptr);
-      EXPECT_EQ(ptr->config_.i, 1234);
-      EXPECT_EQ(*ptr->i_, 5678);
-    }
-    {
-      // Create by r-value
-      auto object = config.create(std::make_shared<int>(5678));
-      EXPECT_TRUE(object);
-      EXPECT_EQ(object->name(), "Derived2WithComplexParam");
-      auto ptr = dynamic_cast<Derived2WithComplexParam*>(object.get());
-      ASSERT_NE(ptr, nullptr);
-      EXPECT_EQ(ptr->config_.i, 1234);
-      EXPECT_EQ(*ptr->i_, 5678);
-    }
-  }
-  {
-    // Create an object with a move-only parameter
-    YAML::Node data;
-    data["type"] = "Derived2WithMoveOnlyParam";
-    data["i"] = 4321;
-    auto config = fromYaml<VirtualConfig<Base2>>(data);
-    {
-      // Create by l-value
-      auto i = std::make_unique<int>(8765);
-      auto object = config.create(std::move(i));
-      ASSERT_TRUE(object);
-      EXPECT_EQ(object->name(), "Derived2WithMoveOnlyParam");
-      auto ptr = dynamic_cast<Derived2WithMoveOnlyParam*>(object.get());
-      ASSERT_NE(ptr, nullptr);
-      EXPECT_EQ(ptr->config_.i, 4321);
-      EXPECT_EQ(*ptr->i_, 8765);
-    }
-    {
-      // Create by r-value
-      auto object = config.create(std::make_unique<int>(8765));
-      ASSERT_TRUE(object);
-      EXPECT_EQ(object->name(), "Derived2WithMoveOnlyParam");
-      auto ptr = dynamic_cast<Derived2WithMoveOnlyParam*>(object.get());
-      ASSERT_NE(ptr, nullptr);
-      EXPECT_EQ(ptr->config_.i, 4321);
-      EXPECT_EQ(*ptr->i_, 8765);
-    }
-    {
-      // Create incorrectly
-      auto i = std::make_unique<const int>(8765);  // The const should create a type mismatch
-      auto object = config.create(std::move(i));
-      EXPECT_FALSE(object);
-    }
-  }
+  VirtualConfig<Base2> config;
+  std::unique_ptr<Base2> object = config.create();
+  EXPECT_FALSE(object);
+
+  YAML::Node data;
+  data["type"] = "Derived2";
+  data["f"] = 1.f;
+  config = fromYaml<VirtualConfig<Base2>>(data);
+  object = config.create();
+  EXPECT_TRUE(object);
+  EXPECT_EQ(object->name(), "Derived2");
+  EXPECT_EQ(dynamic_cast<Derived2*>(object.get())->config_.f, 1.f);
 }
 
 TEST(VirtualConfig, isOptional) {
@@ -429,19 +253,6 @@ Warning: Check [1/1] failed: Virtual config is not set and not marked optional.
 
   config.setOptional();
   EXPECT_TRUE(isValid(config));
-}
-
-TEST(VirtualConfig, defaultOptional) {
-  {
-    constexpr bool kDefaultOptional = true;
-    VirtualConfig<Base2, kDefaultOptional> config;
-    EXPECT_TRUE(isValid(config));
-  }
-  {
-    constexpr bool kDefaultOptional = false;
-    VirtualConfig<Base2, kDefaultOptional> config;
-    EXPECT_FALSE(isValid(config));
-  }
 }
 
 TEST(VirtualConfig, printing) {
@@ -535,135 +346,6 @@ TEST(VirtualConfig, getUnderlying) {
   EXPECT_TRUE(config.isSet());
   EXPECT_FALSE(config.getUnderlying<Derived2::Config>());
   EXPECT_TRUE(config.getUnderlying<Derived2A::Config>());
-}
-
-TEST(VirtualConfig, optionalByDefault) {
-  Settings().restoreDefaults();
-
-  const std::string yaml_str = R"""(modules:
-  - {type: testing}
-  - {a: 5, b: 6}
-  - {type: Derived2}
-)""";
-
-  const auto node = YAML::Load(yaml_str);
-  const auto config = config::fromYaml<ObjectWithOptionalConfigs::Config>(node);
-  const ObjectWithOptionalConfigs object(config);
-  EXPECT_EQ(object.valid.size(), 1u);
-}
-
-TEST(VirtualConfig, parseOptionalMissingField) {
-  {
-    constexpr bool kDefaultOptional = true;
-    YAML::Node data;
-    auto config = fromYaml<VirtualConfig<Base2, kDefaultOptional>>(data);
-    EXPECT_TRUE(isValid(config));
-    EXPECT_TRUE(config.optional());
-  }
-  {
-    constexpr bool kDefaultOptional = false;
-    YAML::Node data;
-    auto config = fromYaml<VirtualConfig<Base2, kDefaultOptional>>(data);
-    EXPECT_FALSE(isValid(config));
-    EXPECT_FALSE(config.optional());
-  }
-}
-
-TEST(VirtualConfig, parseOptionalFieldPresent) {
-  YAML::Node data;
-  data["type"] = "Derived2";
-  data["f"] = 1.f;
-  data["s"] = "blahblah";
-
-  {
-    constexpr bool kDefaultOptional = true;
-    auto config = fromYaml<VirtualConfig<Base2, kDefaultOptional>>(data);
-    EXPECT_TRUE(isValid(config));
-    EXPECT_TRUE(config.isSet());
-    EXPECT_EQ(config.getType(), "Derived2");
-    EXPECT_TRUE(config.optional());
-
-    auto actual_config = config.getUnderlying<Derived2::Config>();
-    ASSERT_TRUE(actual_config);
-    EXPECT_FLOAT_EQ(actual_config->f, 1.f);
-    EXPECT_EQ(actual_config->s, "blahblah");
-  }
-  {
-    constexpr bool kDefaultOptional = false;
-    auto config = fromYaml<VirtualConfig<Base2, kDefaultOptional>>(data);
-    EXPECT_TRUE(isValid(config));
-    EXPECT_TRUE(config.isSet());
-    EXPECT_EQ(config.getType(), "Derived2");
-    EXPECT_FALSE(config.optional());
-
-    auto actual_config = config.getUnderlying<Derived2::Config>();
-    ASSERT_TRUE(actual_config);
-    EXPECT_FLOAT_EQ(actual_config->f, 1.f);
-    EXPECT_EQ(actual_config->s, "blahblah");
-  }
-}
-
-TEST(VirtualConfig, optionalNullCreation) {
-  YAML::Node data;
-  constexpr bool kDefaultOptional = true;
-  auto config = fromYaml<VirtualConfig<Base2, kDefaultOptional>>(data);
-  ASSERT_TRUE(isValid(config));
-
-  auto object = config.create();
-  ASSERT_EQ(object, nullptr);
-}
-
-TEST(VirtualConfig, defaultedConfigCorrect) {
-  RegistrationGuard<DefaultedOptional, DefaultedOptional, DefaultedOptional::Config> guard("DefaultedOptional");
-  RegistrationGuard<ParentOfDefaultedOptional, ParentOfDefaultedOptional, ParentOfDefaultedOptional::Config>
-      parent_guard("ParentOfDefaultedOptional");
-  RegistrationGuard<GrandparentOfDefaultedOptional,
-                    GrandparentOfDefaultedOptional,
-                    GrandparentOfDefaultedOptional::Config>
-      grandparent_guard("GrandparentOfDefaultedOptional");
-
-  {  // default config does the right thing from YAML
-    const auto node = YAML::Load(R"""(
-type: GrandparentOfDefaultedOptional
-child:
-  type: ParentOfDefaultedOptional
-)""");
-    auto root = config::createFromYaml<GrandparentOfDefaultedOptional>(node);
-    ASSERT_TRUE(root);
-    ASSERT_TRUE(root->child);
-    EXPECT_TRUE(root->child->child);
-  }
-
-  {  // manually specifying the type does the right thing
-    const auto node = YAML::Load(R"""(
-type: GrandparentOfDefaultedOptional
-child:
-  type: ParentOfDefaultedOptional
-  child:
-    type: DefaultedOptional
-    foo: 5
-)""");
-    auto root = config::createFromYaml<GrandparentOfDefaultedOptional>(node);
-    ASSERT_TRUE(root);
-    ASSERT_TRUE(root->child);
-    ASSERT_TRUE(root->child->child);
-    EXPECT_EQ(root->child->child->config.foo, 5);
-  }
-
-  {  // overriding default does the right thing
-    const auto node = YAML::Load(R"""(
-type: GrandparentOfDefaultedOptional
-child:
-  type: ParentOfDefaultedOptional
-  child:
-    type: ''
-)""");
-    auto root_config = config::fromYaml<GrandparentOfDefaultedOptional::Config>(node);
-    auto root = config::createFromYaml<GrandparentOfDefaultedOptional>(node);
-    ASSERT_TRUE(root);
-    ASSERT_TRUE(root->child);
-    EXPECT_FALSE(root->child->child);
-  }
 }
 
 }  // namespace config::test

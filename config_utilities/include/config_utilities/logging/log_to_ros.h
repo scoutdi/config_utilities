@@ -33,62 +33,47 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  * -------------------------------------------------------------------------- */
 
-#include "config_utilities/getters.h"
+#pragma once
 
-#include <gtest/gtest.h>
+#include <ros/console.h>
 
-#include "config_utilities/config.h"
-#include "config_utilities/parsing/yaml.h"
-#include "config_utilities/test/default_config.h"
-#include "config_utilities/test/utils.h"
+#include "config_utilities/factory.h"
+#include "config_utilities/internal/logger.h"
 
-namespace config::test {
+namespace config::internal {
 
-struct GetterStruct {
-  int some_number;
-  std::string some_string;
+/**
+ * @brief Implements logging to roslog. This file pulls in ros as a dependency, but its not required if this file is
+ * not included in the project.
+ */
+class RosLogger : public Logger {
+ public:
+  RosLogger() = default;
+  virtual ~RosLogger() = default;
+
+ protected:
+  void logImpl(const Severity severity, const std::string& message) override {
+    switch (severity) {
+      case Severity::kInfo:
+        ROS_INFO_STREAM(message);
+        break;
+
+      case Severity::kWarning:
+        ROS_WARN_STREAM(message);
+        break;
+
+      case Severity::kError:
+        ROS_ERROR_STREAM(message);
+        break;
+
+      case Severity::kFatal:
+        ROS_FATAL_STREAM(message);
+    }
+  }
+
+ private:
+  // Factory registration to allow setting of formatters via Settings::setLogger().
+  inline static const auto registration_ = Registration<Logger, RosLogger>("ros");
 };
 
-void declare_config(GetterStruct& config) {
-  name("GetterStruct");
-  field(config.some_number, "some_number");
-  field(config.some_string, "some_string");
-}
-
-TEST(ConfigGetters, Getters) {
-  const std::string yaml_string = R"yaml(
-some_number: 5
-some_string: "Hello"
-)yaml";
-  const auto node = YAML::Load(yaml_string);
-
-  const auto config = fromYaml<GetterStruct>(node);
-  EXPECT_EQ(config.some_number, 5);
-  EXPECT_EQ(config.some_string, "Hello");
-
-  const auto fields = listFields(config);
-  EXPECT_EQ(fields.size(), 2);
-  EXPECT_EQ(fields[0], "some_number");
-  EXPECT_EQ(fields[1], "some_string");
-
-  const auto number = getField<GetterStruct, int>(config, "some_number");
-  EXPECT_TRUE(number.has_value());
-  EXPECT_EQ(number.value(), 5);
-
-  const auto string = getField<GetterStruct, std::string>(config, "some_string");
-  EXPECT_TRUE(string.has_value());
-  EXPECT_EQ(string.value(), "Hello");
-
-  auto logger = TestLogger::create();
-  const auto wrong = getField<GetterStruct, int>(config, "some_string");
-  EXPECT_FALSE(wrong.has_value());
-  EXPECT_EQ(logger->numMessages(), 1);
-  EXPECT_EQ(logger->lastMessage(), "Field 'some_string' could not be converted to the requested type: bad conversion");
-
-  const auto wrong2 = getField<GetterStruct, std::string>(config, "non_existent_field");
-  EXPECT_FALSE(wrong2.has_value());
-  EXPECT_EQ(logger->numMessages(), 2);
-  EXPECT_EQ(logger->lastMessage(), "Field 'non_existent_field' not found in config.");
-}
-
-}  // namespace config::test
+}  // namespace config::internal

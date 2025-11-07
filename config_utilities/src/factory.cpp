@@ -128,7 +128,7 @@ bool operator<(const ConfigPair& lhs, const ConfigPair& rhs) {
 }
 
 std::string ModuleRegistry::getAllRegistered() {
-  const auto width = Settings::instance().printing.width;
+  const auto width = Settings::instance().print_width;
   const auto& registry = instance().type_registry;
   std::stringstream ss;
   ss << banner("Registered Objects", width) << showWithFilter(registry, &isPlainObject) << "\n";
@@ -213,33 +213,29 @@ ModuleRegistry& ModuleRegistry::instance() {
 }
 
 // Helper function to read the type param from a node.
-bool getTypeImpl(const YAML::Node& data, std::string& type, const std::string& key) {
+bool getTypeImpl(const YAML::Node& data, std::string& type, const std::string& param_name) {
   if (!data.IsMap()) {
     return false;
   }
-
-  // Get the type or print an error.
-  if (!data[key]) {
+  if (!data[param_name]) {
     return false;
   }
-
   try {
-    type = data[key].as<std::string>();
+    type = data[param_name].as<std::string>();
   } catch (const YAML::Exception& e) {
     return false;
   }
-
   return true;
 }
 
-bool getType(const YAML::Node& data, std::string& type, bool required, const std::string& param_name) {
-  const std::string key = param_name.empty() ? Settings::instance().factory.type_param_name : param_name;
-  const auto success = getTypeImpl(data, type, key);
-  if (!success && required) {
-    Logger::logError("Could not read the param '" + key + "' to deduce the type of the module to create.");
+bool getType(const YAML::Node& data, std::string& type) {
+  // Get the type or print an error.
+  const std::string param_name = Settings::instance().factory_type_param_name;
+  if (!getTypeImpl(data, type, param_name)) {
+    Logger::logError("Could not read the param '" + param_name + "' to deduce the type of the module to create.");
+    return false;
   }
-
-  return success;
+  return true;
 }
 
 }  // namespace config::internal

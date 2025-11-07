@@ -41,7 +41,7 @@ namespace config::test {
 
 struct Config {};
 
-void declare_config(Config&) {}
+void declare_config(Config& config) {}
 
 struct NotAConfig {};
 

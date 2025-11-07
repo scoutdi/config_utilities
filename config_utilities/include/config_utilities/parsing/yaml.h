@@ -47,7 +47,6 @@
 #include "config_utilities/internal/string_utils.h"
 #include "config_utilities/internal/visitor.h"
 #include "config_utilities/internal/yaml_utils.h"
-#include "config_utilities/update.h"
 
 namespace config {
 
@@ -130,7 +129,7 @@ bool toYamlFile(const ConfigT& config, const std::string& file_name) {
  */
 template <typename BaseT, typename... ConstructorArguments>
 std::unique_ptr<BaseT> createFromYaml(const YAML::Node& node, ConstructorArguments... args) {
-  return internal::ObjectWithConfigFactory<BaseT, ConstructorArguments...>::create(node, std::move(args)...);
+  return internal::ObjectWithConfigFactory<BaseT, ConstructorArguments...>::create(node, args...);
 }
 
 /**
@@ -207,16 +206,7 @@ std::unique_ptr<BaseT> createFromYamlFileWithNamespace(const std::string& file_n
  */
 template <typename ConfigT>
 bool updateFromYaml(ConfigT& config, const YAML::Node& node, const std::string& name_space = "") {
-  return updateFields(config, node, true, name_space);
-}
-
-/**
- * @brief Load global settings for `config_utilities` from YAML
- * @param node YAML node containing settings
- * @param name_space Namespace to load the settings from
- */
-inline void setConfigSettingsFromYAML(const YAML::Node& node, const std::string& name_space = "") {
-  internal::Visitor::setValues(Settings(), internal::lookupNamespace(node, name_space), true);
+  return updateField(config, node, true, name_space);
 }
 
 }  // namespace config

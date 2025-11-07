@@ -61,13 +61,11 @@ std::vector<std::string> convertArguments() {
   };
 }
 
-/** @brief Helper function to read the type param from a node.
- * @param data YAML node to read type from
- * @param type Type value to filll
- * @param required Whether or not the type field is required
- * @param param_name Field in YAML node to read (empty string defaults to Settings().factory.type_param_name)
- */
-bool getType(const YAML::Node& data, std::string& type, bool required = true, const std::string& param_name = "");
+//! @brief Helper function to read the type param from a node.
+bool getTypeImpl(const YAML::Node& data, std::string& type, const std::string& param_name);
+
+//! @brief Get type from YAML node directly
+bool getType(const YAML::Node& data, std::string& type);
 
 //! @brief Struct recording typenames for a module (i.e., the constructor signature). Can be used as a map key
 struct ModuleInfo {
@@ -243,16 +241,10 @@ class ModuleRegistry {
 
     // wrap factory call to register any allocations
     return [factory, key, type, create_callback](Args... args) -> BaseT* {
-      auto pointer = factory(std::move(args)...);
+      auto pointer = factory(args...);
       create_callback(key, type, pointer);
       return pointer;
     };
-  }
-
-  template <typename BaseT, typename... Args>
-  static void removeModule(const std::string& type, bool skip_first_arg = false, const std::string& actual_base = "") {
-    const auto key = ModuleInfo::fromTypes<BaseT, Args...>(skip_first_arg, actual_base);
-    removeModule(key, type);
   }
 
   template <typename BaseT, typename ConfigT>
@@ -275,32 +267,10 @@ class ModuleRegistry {
   }
 
   template <typename BaseT, typename ConfigT>
-  static void removeConfig() {
-    const auto key = ConfigPair::fromTypes<BaseT, ConfigT>();
-    auto& registry = instance().config_registry;
-    registry.erase(key);
-  }
-
-  template <typename BaseT, typename ConfigT>
   static std::string getType() {
     auto& registry = instance().config_registry;
     auto iter = registry.find(ConfigPair::fromTypes<BaseT, ConfigT>());
     return iter == registry.end() ? "" : iter->second;
-  }
-
-  static std::vector<std::string> getRegisteredConfigTypes(const std::string& actual_base) {
-    const auto key = ModuleInfo::fromTypes<ConfigWrapper>(false, actual_base);
-    const auto& registry = instance().type_registry;
-    const auto iter = registry.find(key);
-    if (iter == registry.end()) {
-      return {};
-    }
-
-    std::vector<std::string> result;
-    for (const auto& [type, _] : iter->second) {
-      result.push_back(type);
-    }
-    return result;
   }
 
   static bool hasModule(const ModuleInfo& key, const std::string& type);
@@ -375,12 +345,6 @@ struct ConfigFactory {
     }
   }
 
-  template <typename DerivedConfigT>
-  static void removeEntry(const std::string& type) {
-    ModuleRegistry::removeModule<ConfigWrapper>(type, false, typeName<BaseT>());
-    ModuleRegistry::removeConfig<BaseT, DerivedConfigT>();
-  }
-
   // Create the config.
   static std::unique_ptr<ConfigWrapper> create(const std::string& type) {
     const auto factory = ModuleRegistry::getModule<ConfigWrapper>(type, registration_info, false, typeName<BaseT>());
@@ -401,11 +365,9 @@ struct ObjectFactory {
   // Add entries.
   template <typename DerivedT>
   static void addEntry(const std::string& type) {
-    const Constructor method = [](Args... args) -> BaseT* { return new DerivedT(std::move(args)...); };
+    const Constructor method = [](Args... args) -> BaseT* { return new DerivedT(args...); };
     ModuleRegistry::addModule<BaseT, DerivedT, Args...>(type, method);
   }
-
-  static void removeEntry(const std::string& type) { ModuleRegistry::removeModule<BaseT, Args...>(type); }
 
   static std::unique_ptr<BaseT> create(const std::string& type, Args... args) {
     const auto factory = ModuleRegistry::getModule<BaseT, Args...>(type, registration_info);
@@ -413,7 +375,7 @@ struct ObjectFactory {
       return nullptr;
     }
 
-    return std::unique_ptr<BaseT>(factory(std::move(args)...));
+    return std::unique_ptr<BaseT>(factory(args...));
   }
 };
 
@@ -430,14 +392,10 @@ struct ObjectWithConfigFactory {
     const Constructor method = [](const YAML::Node& data, Args... args) -> BaseT* {
       DerivedConfigT config;
       Visitor::setValues(config, data);
-      return new DerivedT(config, std::move(args)...);
+      return new DerivedT(config, args...);
     };
 
     ModuleRegistry::addModule<BaseT, DerivedT, const YAML::Node&, Args...>(type, method, true);
-  }
-
-  static void removeEntry(const std::string& type) {
-    ModuleRegistry::removeModule<BaseT, const YAML::Node&, Args...>(type, true);
   }
 
   static std::unique_ptr<BaseT> create(const YAML::Node& data, Args... args) {
@@ -451,7 +409,7 @@ struct ObjectWithConfigFactory {
       return nullptr;
     }
 
-    return std::unique_ptr<BaseT>(factory(data, std::move(args)...));
+    return std::unique_ptr<BaseT>(factory(data, args...));
   }
 };
 
@@ -509,7 +467,7 @@ struct RegistrationWithConfig {
  */
 template <typename BaseT, typename... ConstructorArguments>
 std::unique_ptr<BaseT> create(const std::string& type, ConstructorArguments... args) {
-  return internal::ObjectFactory<BaseT, ConstructorArguments...>::create(type, std::move(args)...);
+  return internal::ObjectFactory<BaseT, ConstructorArguments...>::create(type, args...);
 }
 
 }  // namespace config

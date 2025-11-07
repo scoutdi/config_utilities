@@ -50,10 +50,8 @@ namespace config {
  * class.
  *
  * @tparam BaseT The base class of the object that should be created from the config.
- * @tparam OptionalByDefault Whether or not the virtual config is optional when constructed (useful for maps and vectors
- * of configs)
  */
-template <class BaseT, bool OptionalByDefault = false>
+template <class BaseT>
 class VirtualConfig {
  public:
   VirtualConfig() = default;
@@ -63,8 +61,6 @@ class VirtualConfig {
   VirtualConfig(const VirtualConfig& other) {
     if (other.config_) {
       config_ = other.config_->clone();
-    } else {
-      config_.reset();
     }
     optional_ = other.optional_;
   }
@@ -77,8 +73,6 @@ class VirtualConfig {
   VirtualConfig& operator=(const VirtualConfig& other) {
     if (other.config_) {
       config_ = other.config_->clone();
-    } else {
-      config_.reset();
     }
     optional_ = other.optional_;
     return *this;
@@ -148,7 +142,7 @@ class VirtualConfig {
   /**
    * @brief Get the string-identifier-type of the config stored in the virtual config.
    */
-  std::string getType() const { return config_ ? config_->type : internal::kUninitializedVirtualConfigType; }
+  std::string getType() const { return config_ ? config_->type : "Uninitialized"; }
 
   /**
    * @brief Get the underlying config that this holds, if set
@@ -186,47 +180,39 @@ class VirtualConfig {
     // also be de-serialized so this should not result in any warnings, we print them anyways to be sure. The factory
     // should take proper care of any other verbose error management.
     const internal::MetaData data = internal::Visitor::getValues(*this);
-    return internal::ObjectWithConfigFactory<BaseT, ConstructorArguments...>::create(data.data, std::move(args)...);
+    return internal::ObjectWithConfigFactory<BaseT, ConstructorArguments...>::create(data.data, args...);
   }
 
  private:
-  template <typename T, bool Opt>
-  friend void declare_config(VirtualConfig<T, Opt>&);
+  template <typename T>
+  friend void declare_config(VirtualConfig<T>&);
   friend struct internal::Visitor;
 
-  bool optional_ = OptionalByDefault;
+  bool optional_ = false;
   std::unique_ptr<internal::ConfigWrapper> config_;
 };
 
 namespace internal {
 
 // Declare virtual config types.
-template <typename T, bool Opt>
-struct is_virtual_config<VirtualConfig<T, Opt>> : std::true_type {};
+template <typename T>
+struct is_virtual_config<VirtualConfig<T>> : std::true_type {};
 
 }  // namespace internal
 
 // Declare the Virtual Config a config, so it can be handled like any other object.
-template <typename BaseT, bool Opt>
-void declare_config(VirtualConfig<BaseT, Opt>& config) {
-  auto data = internal::Visitor::visitVirtualConfig(
-      config.isSet(), config.optional_, config.getType(), internal::typeName<BaseT>());
-
-  // underlying derived type is not required if the config is optional, or if the config has been
-  // initialized to a derived type already (i.e., config_ is already populated)
-  const bool type_required = !config.optional_ && !config.config_;
+template <typename BaseT>
+void declare_config(VirtualConfig<BaseT>& config) {
+  auto data = internal::Visitor::visitVirtualConfig(config.isSet(), config.optional_, config.getType());
 
   // If setting values create the wrapped config using the string identifier.
   if (data) {
     std::string type;
-    if (internal::getType(*data, type, type_required)) {
-      if (type == internal::kUninitializedVirtualConfigType) {
-        // Reserved token to delete the virtual config in dynamic configs.
-        config.config_.reset();
-      } else {
-        config.config_ = internal::ConfigFactory<BaseT>::create(type);
-      }
-    } else if (type_required) {
+    const bool success = config.optional_ ? internal::getTypeImpl(*data, type, Settings().factory_type_param_name)
+                                          : internal::getType(*data, type);
+    if (success) {
+      config.config_ = internal::ConfigFactory<BaseT>::create(type);
+    } else if (!config.optional_) {
       std::stringstream ss;
       ss << "Could not get type for '" << internal::ModuleInfo::fromTypes<BaseT>().typeInfo() << "'";
       internal::Logger::logError(ss.str());

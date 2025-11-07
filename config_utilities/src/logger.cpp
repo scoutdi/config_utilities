@@ -37,8 +37,6 @@
 
 #include <stdexcept>
 
-#include "config_utilities/logging/log_to_stdout.h"
-
 namespace config::internal {
 
 Logger::Ptr Logger::logger_;
@@ -75,9 +73,7 @@ void Logger::setLogger(Logger::Ptr logger) {
 
 void Logger::dispatch(const Severity severity, const std::string& message) {
   if (!logger_) {
-    // NOTE(nathan) we default to logging to stdout/stderr to make sure warnings and errors are visible
-    logger_ = Settings::instance().disable_default_stdout_logger ? std::make_shared<Logger>()
-                                                                 : std::make_shared<StdoutLogger>();
+    logger_ = std::make_shared<Logger>();
   }
 
   logger_->logImpl(severity, message);

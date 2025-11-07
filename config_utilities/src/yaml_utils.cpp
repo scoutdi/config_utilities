@@ -35,128 +35,41 @@
 
 #include "config_utilities/internal/yaml_utils.h"
 
-#include <optional>
-#include <regex>
-#include <sstream>
-
-#include "config_utilities/internal/logger.h"
 #include "config_utilities/internal/string_utils.h"
 
 namespace config::internal {
-namespace {
 
-inline bool isLeaf(const YAML::Node& a) { return !a.IsMap() && !a.IsSequence(); }
-
-inline std::optional<MergeMode> modeFromTag(const YAML::Node& a) {
-  const auto tag = a.Tag();
-  if (tag == "!append") {
-    return MergeMode::APPEND;
-  } else if (tag == "!update") {
-    return MergeMode::UPDATE;
-  } else if (tag == "!replace") {
-    return MergeMode::REPLACE;
-  } else {
-    return std::nullopt;
-  }
-}
-
-inline void mergeLeaves(YAML::Node& a, const YAML::Node& b) {
-  // If b is invalid, we can't do anything.
-  if (b.IsNull() || !b.IsDefined()) {
-    return;
-  }
-
-  a = YAML::Clone(b);
-}
-
-inline void mergeYamlMaps(YAML::Node& a, const YAML::Node& b, MergeMode mode) {
-  const auto tag_mode = modeFromTag(b);
-  mode = tag_mode.value_or(mode);
-  if (mode == MergeMode::REPLACE) {
+void mergeYamlNodes(YAML::Node& a, const YAML::Node& b) {
+  if (!b.IsMap()) {
+    // If b is not a map, merge result is b, unless b is null.
+    if (b.IsNull() || !b.IsDefined()) {
+      return;
+    }
     a = YAML::Clone(b);
-    if (tag_mode) {
-      a.SetTag("");
-    }
-
+    return;
+  }
+  if (!a.IsMap()) {
+    // If a is not a map, merge result is b
+    a = YAML::Clone(b);
+    return;
+  }
+  if (!b.size()) {
+    // If a is a map, and b is an empty map, return a
     return;
   }
 
-  // Both a and b are maps: merge all entries of b into a.
-  for (const auto& node : b) {
-    if (!node.first.IsScalar()) {
-      std::stringstream ss;
-      ss << "Complex keys not supported, dropping '" << node.first << "' during merge";
-      Logger::logWarning(ss.str());
-      continue;
-    }
-
-    const auto& key = node.first.Scalar();
-    if (a[key]) {
-      // Node exists. Merge recursively.
-      YAML::Node a_sub = a[key];  // This node is a ref.
-      mergeYamlNodes(a_sub, node.second, mode);
-    } else {
-      // Leaf of a, but b continues: insert b
-      a[key] = YAML::Clone(node.second);
-    }
-  }
-}
-
-inline void updateYamlSequence(YAML::Node& a, const YAML::Node& b, MergeMode mode) {
-  auto iter_a = a.begin();
-  auto iter_b = b.begin();
-  while (iter_b != b.end()) {
-    if (iter_a != a.end()) {
-      auto a_ref = *iter_a;
-      mergeYamlNodes(a_ref, *iter_b, mode);
-      ++iter_a;
-    } else {
-      a.push_back(YAML::Clone(*iter_b));
-    }
-
-    ++iter_b;
-  }
-}
-
-inline void mergeYamlSequences(YAML::Node& a, const YAML::Node& b, MergeMode mode) {
-  const auto tag_mode = modeFromTag(b);
-  mode = tag_mode.value_or(mode);
-  switch (mode) {
-    case MergeMode::REPLACE:
-      a = YAML::Clone(b);
-      if (tag_mode) {
-        a.SetTag("");
+  // Merge all entries of b into a.
+  for (const auto kv_pair : b) {
+    if (kv_pair.first.IsScalar()) {
+      const std::string& key = kv_pair.first.Scalar();
+      if (a[key]) {
+        // Node exists. Merge recursively.
+        YAML::Node a_sub = a[key];  // This node is a ref.
+        mergeYamlNodes(a_sub, kv_pair.second);
+      } else {
+        a[key] = YAML::Clone(kv_pair.second);
       }
-      break;
-    case MergeMode::APPEND:
-      for (const auto& child : b) {
-        a.push_back(YAML::Clone(child));
-      }
-      break;
-    case MergeMode::UPDATE:
-    default:
-      updateYamlSequence(a, b, mode);
-      break;
-  }
-}
-
-}  // namespace
-
-void mergeYamlNodes(YAML::Node& a, const YAML::Node& b, MergeMode mode) {
-  // If either node is a leaf in the config tree, pass merging behavior to helper function
-  if (isLeaf(b) || isLeaf(a)) {
-    mergeLeaves(a, b);
-    return;
-  }
-
-  if (a.IsMap() && b.IsMap()) {
-    mergeYamlMaps(a, b, mode);
-  } else if (a.IsSequence() && b.IsSequence()) {
-    mergeYamlSequences(a, b, mode);
-  } else {
-    std::stringstream ss;
-    ss << "Cannot merge map and sequence! Discarding '" << b << "'";
-    Logger::logWarning(ss.str());
+    }
   }
 }
 
@@ -185,7 +98,6 @@ bool isEqual(const YAML::Node& a, const YAML::Node& b) {
   if (a.Type() != b.Type()) {
     return false;
   }
-
   switch (a.Type()) {
     case YAML::NodeType::Scalar:
       return a.Scalar() == b.Scalar();
@@ -214,10 +126,10 @@ bool isEqual(const YAML::Node& a, const YAML::Node& b) {
       }
       return true;
     case YAML::NodeType::Null:
+      return true;
     case YAML::NodeType::Undefined:
       return true;
   }
-
   return false;
 }
 
@@ -252,67 +164,6 @@ std::vector<std::pair<YAML::Node, YAML::Node>> getNodeMap(const YAML::Node& node
   }
 
   return result;
-}
-
-std::string scalarToString(const YAML::Node& data, bool reformat_float) {
-  std::stringstream orig;
-  orig << data;
-  if (!reformat_float) {
-    return orig.str();
-  }
-
-  const std::regex float_detector("[+-]?[0-9]*[.][0-9]+");
-  if (!std::regex_search(orig.str(), float_detector)) {
-    return orig.str();  // no reason to reformat if no decimal points
-  }
-
-  double value;
-  try {
-    value = data.as<double>();
-  } catch (const std::exception&) {
-    return orig.str();  // value is some sort of string that can't be parsed as a float
-  }
-
-  // this should have default ostream precision for formatting float
-  std::stringstream ss;
-  ss << value;
-  return ss.str();
-}
-
-std::string yamlToString(const YAML::Node& data, bool reformat_float) {
-  switch (data.Type()) {
-    case YAML::NodeType::Scalar: {
-      // scalars require special handling for float precision
-      return scalarToString(data, reformat_float);
-    }
-    case YAML::NodeType::Sequence: {
-      std::string result = "[";
-      for (size_t i = 0; i < data.size(); ++i) {
-        result += yamlToString(data[i], reformat_float);
-        if (i < data.size() - 1) {
-          result += ", ";
-        }
-      }
-      result += "]";
-      return result;
-    }
-    case YAML::NodeType::Map: {
-      std::string result = "{";
-      bool has_data = false;
-      for (const auto& kv_pair : data) {
-        has_data = true;
-        result +=
-            yamlToString(kv_pair.first, reformat_float) + ": " + yamlToString(kv_pair.second, reformat_float) + ", ";
-      }
-      if (has_data) {
-        result = result.substr(0, result.length() - 2);
-      }
-      result += "}";
-      return result;
-    }
-    default:
-      return kInvalidField;
-  }
 }
 
 }  // namespace config::internal

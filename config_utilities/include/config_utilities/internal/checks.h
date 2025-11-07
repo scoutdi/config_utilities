@@ -35,15 +35,11 @@
 
 #pragma once
 
-#include <algorithm>
 #include <functional>
 #include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
-
-#include "config_utilities/internal/field_input_info.h"
-#include "config_utilities/internal/yaml_parser.h"
 
 namespace config::internal {
 
@@ -54,7 +50,6 @@ struct CheckBase {
   virtual std::string message() const = 0;
   virtual std::string name() const { return ""; }
   virtual std::unique_ptr<CheckBase> clone() const = 0;
-  virtual IntFieldInputInfo::Ptr fieldInputInfo() const { return nullptr; }
 
   inline operator bool() const { return valid(); }
 };
@@ -87,7 +82,7 @@ struct CompareMessageTrait {
 template <typename T, typename Compare>
 class BinaryCheck : public CheckBase {
  public:
-  BinaryCheck(const T& param, const T& value, const std::string& name = "")
+  BinaryCheck(const T& param, const T& value, const std::string name = "")
       : param_(param), value_(value), name_(name) {}
 
   bool valid() const override { return Compare{}(param_, value_); }
@@ -102,35 +97,6 @@ class BinaryCheck : public CheckBase {
 
   std::unique_ptr<CheckBase> clone() const override {
     return std::make_unique<BinaryCheck<T, Compare>>(param_, value_, name_);
-  }
-
-  IntFieldInputInfo::Ptr fieldInputInfo() const override {
-    auto info = createFieldInputInfo<T>();
-    if (!info || (info->type != FieldInputInfo::Type::kInt && info->type != FieldInputInfo::Type::kFloat)) {
-      return nullptr;
-    }
-    YAML::Node value = YamlParser::toYaml(value_); 
-    if (!value) {
-      return nullptr;
-    }
-    // This is a bit stupid but we avoid re-defining another template trait.
-    const std::string sym = CompareMessageTrait<Compare>::message();
-    if (sym == ">") {
-      info->setMin(value, false);
-    } else if (sym == ">=") {
-      info->setMin(value, true);
-    } else if (sym == "<") {
-      info->setMax(value, false);
-    } else if (sym == "<=") {
-      info->setMax(value, true);
-    } else if (sym == "==") {
-      // Will have interesting behavior, consider replacing with option.
-      info->setMin(value, true);
-      info->setMax(value, true);
-    }
-    // Not equal does not have a clear representation for input infos and will be handled like all other irregular
-    // checks upon parsing.
-    return info;
   }
 
  protected:
@@ -204,16 +170,6 @@ class CheckRange : public CheckBase {
     return std::make_unique<CheckRange<T>>(param_, lower_, upper_, name_, lower_inclusive_, upper_inclusive_);
   }
 
-  IntFieldInputInfo::Ptr fieldInputInfo() const override {
-    auto info = createFieldInputInfo<T>();
-    if (!info || (info->type != FieldInputInfo::Type::kInt && info->type != FieldInputInfo::Type::kFloat)) {
-      return nullptr;
-    }
-    info->setMin(YamlParser::toYaml(lower_), lower_inclusive_);
-    info->setMax(YamlParser::toYaml(upper_), upper_inclusive_);
-    return info;
-  }
-
  protected:
   const T param_;
   const T lower_;
@@ -230,8 +186,12 @@ class CheckIsOneOf : public CheckBase {
       : param_(param), candidates_(candidates), name_(name) {}
 
   bool valid() const override {
-    // check that param matches any candidate
-    return std::any_of(candidates_.begin(), candidates_.end(), [this](const auto& c) { return c == param_; });
+    for (const T& cadidate : candidates_) {
+      if (param_ == cadidate) {
+        return true;
+      }
+    }
+    return false;
   }
 
   std::string message() const override {
@@ -253,16 +213,6 @@ class CheckIsOneOf : public CheckBase {
 
   std::unique_ptr<CheckBase> clone() const override {
     return std::make_unique<CheckIsOneOf<T>>(param_, candidates_, name_);
-  }
-
-  IntFieldInputInfo::Ptr fieldInputInfo() const override {
-    auto info = std::make_shared<OptionsFieldInputInfo>();
-    for (const T& candidate : candidates_) {
-      std::stringstream ss;
-      ss << candidate;
-      info->options.push_back(ss.str());
-    }
-    return info;
   }
 
  private:

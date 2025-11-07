@@ -40,13 +40,11 @@
 #include <optional>
 #include <set>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include "config_utilities/internal/meta_data.h"
 #include "config_utilities/internal/namespacing.h"
 #include "config_utilities/internal/yaml_parser.h"
-#include "config_utilities/traits.h"
 
 namespace config {
 
@@ -66,11 +64,7 @@ struct Visitor {
   static bool hasInstance();
 
   // Interfaces for all internal tools interact with configs through the visitor.
-  /**
-   * @brief Set the values of a config from a YAML node.
-   * @param config The config to set the values for.
-   * @param node The data to set the values from.
-   */
+  // Set the data in the config from the node.
   template <typename ConfigT>
   static MetaData setValues(ConfigT& config,
                             const YAML::Node& node,
@@ -86,12 +80,6 @@ struct Visitor {
                             const std::string& name_space = "",
                             const std::string& field_name = "");
 
-  // Get the data and field info stored in the config.
-  template <typename ConfigT>
-  static MetaData getInfo(const ConfigT& config,
-                          const std::string& name_space = "",
-                          const std::string& field_name = "");
-
   // Execute all checks specified in the config.
   template <typename ConfigT>
   static MetaData getChecks(const ConfigT& config, const std::string& field_name = "");
@@ -104,8 +92,8 @@ struct Visitor {
   template <typename T, typename std::enable_if<!isConfig<T>(), bool>::type = true>
   static void visitField(T& field, const std::string& field_name, const std::string& unit);
 
-  // Types with a extra conversion.
-  template <typename Conversion, typename T>
+  // Non-config types with a conversion.
+  template <typename Conversion, typename T, typename std::enable_if<!isConfig<T>(), bool>::type = true>
   static void visitField(T& field, const std::string& field_name, const std::string& unit);
 
   // Single config types.
@@ -134,10 +122,7 @@ struct Visitor {
   static void visitBase(ConfigT& config);
 
   // Virtual config.
-  static std::optional<YAML::Node> visitVirtualConfig(bool is_set,
-                                                      bool is_optional,
-                                                      const std::string& type,
-                                                      const std::string& base_type);
+  static std::optional<YAML::Node> visitVirtualConfig(bool is_set, bool is_optional, const std::string& type);
 
  private:
   friend class config::NameSpace;
@@ -147,7 +132,7 @@ struct Visitor {
   friend std::string config::current_namespace();
 
   // Which operations to perform on the data.
-  enum class Mode { kGet, kGetDefaults, kSet, kCheck, kGetInfo };
+  enum class Mode { kGet, kGetDefaults, kSet, kCheck };
   const Mode mode;
 
   // Create and access the meta data for the current thread. Lifetime of the meta data is managed internally by the
@@ -156,33 +141,18 @@ struct Visitor {
   // by calling 'declare_config()'.
   explicit Visitor(Mode _mode, const std::string& _name_space = "", const std::string& _field_name = "");
 
-  // Singleton access.
   static Visitor& instance();
 
   /* Utility function to manipulate data. */
-  // Dispatch getting a default meta data for a config.
+  // Helper function to get the default values of a config.
   template <typename ConfigT, typename std::enable_if<!is_virtual_config<ConfigT>::value, bool>::type = true>
   static MetaData getDefaults(const ConfigT& config);
   template <typename ConfigT, typename std::enable_if<is_virtual_config<ConfigT>::value, bool>::type = true>
   static MetaData getDefaults(const ConfigT& config);
 
-  // Dispatch populating field input info from conversions.
-  template <typename Conversion,
-            typename ConfigT,
-            typename IntermediateT,
-            typename std::enable_if<!hasFieldInputInfo<Conversion>() || isConfig<ConfigT>(), bool>::type = true>
-  static void getFieldInputInfo(const IntermediateT& intermediate, const std::string& field_name);
-
-  template <typename Conversion,
-            typename ConfigT,
-            typename IntermediateT,
-            typename std::enable_if<hasFieldInputInfo<Conversion>() && !isConfig<ConfigT>(), bool>::type = true>
-  static void getFieldInputInfo(const IntermediateT& intermediate, const std::string& field_name);
-
-  // Computes the default values for all fields in the meta data. This assumes that the meta data is already created,
-  // and the meta data was created from ConfigT.
+  // Labels all fields in the data as default if they match the default values of the config.
   template <typename ConfigT>
-  static void getDefaultValues(const ConfigT& config, MetaData& data);
+  static void flagDefaultValues(const ConfigT& config, MetaData& data);
 
   // Extend the current visitor with a sub-visitor, replicating the previous specification.
   template <typename ConfigT>

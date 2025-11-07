@@ -39,41 +39,29 @@
 
 namespace config::internal {
 
-std::string AslFormatter::formatErrorsImpl(const MetaData& data,
-                                           const std::string& what,
-                                           const Severity severity,
-                                           bool only_messages) {
+std::string AslFormatter::formatErrorsImpl(const MetaData& data, const std::string& what, const Severity severity) {
   const std::string sev = severityToString(severity) + ": ";
-  const auto& settings = Settings::instance().printing;
+  const size_t print_width = Settings::instance().print_width;
   is_first_divider_ = true;
   name_prefix_ = "";
   current_check_ = 0;
-  if (settings.show_num_checks && settings.inline_subconfigs) {
+  if (indicate_num_checks_ && Settings::instance().inline_subconfig_field_names) {
     total_num_checks_ = 0;
     data.performOnAll([this](const MetaData& data) { total_num_checks_ += data.checks.size(); });
   }
 
   // Header line.
-  std::string result;
-  if (!only_messages) {
-    result += what + " '" + resolveConfigName(data) + "':\n" +
-              internal::printCenter(resolveConfigName(data), settings.width, '=') + "\n";
-  }
+  std::string result = what + " '" + resolveConfigName(data) + "':\n" +
+                       internal::printCenter(resolveConfigName(data), print_width, '=') + "\n";
 
   // Format all checks and errors.
-  result += formatErrorsRecursive(data, sev, only_messages ? size_t(-1) : settings.width);
-
-  // Closing line.
-  if (!only_messages) {
-    result += std::string(settings.width, '=');
-  }
-  return result;
+  result += formatErrorsRecursive(data, sev, print_width);
+  return result + std::string(print_width, '=');
 }
 
 std::string AslFormatter::formatErrorsRecursive(const MetaData& data, const std::string& sev, const size_t length) {
   const std::string name_prefix_before = name_prefix_;
-  const auto& settings = Settings::instance().printing;
-  if (settings.inline_subconfigs) {
+  if (Settings::instance().inline_subconfig_field_names) {
     if (!data.field_name.empty()) {
       // TOOD(nathan) refactor to put in metadata
       name_prefix_ += data.field_name;
@@ -91,11 +79,11 @@ std::string AslFormatter::formatErrorsRecursive(const MetaData& data, const std:
   std::string result = formatChecksInternal(data, sev, length) + formatErrorsInternal(data, sev, length);
 
   // Add more dividers if necessary.
-  if (!settings.inline_subconfigs && !result.empty()) {
+  if (!Settings::instance().inline_subconfig_field_names && !result.empty()) {
     if (is_first_divider_) {
       is_first_divider_ = false;
     } else {
-      result = internal::printCenter(resolveConfigName(data), settings.width, '-') + "\n" + result;
+      result = internal::printCenter(resolveConfigName(data), Settings::instance().print_width, '-') + "\n" + result;
     }
   }
 
@@ -108,23 +96,22 @@ std::string AslFormatter::formatErrorsRecursive(const MetaData& data, const std:
 
 std::string AslFormatter::formatMissingImpl(const MetaData& data, const std::string& what, const Severity severity) {
   const std::string sev = severityToString(severity) + ": ";
-  const auto& settings = Settings::instance().printing;
+  const size_t print_width = Settings::instance().print_width;
   is_first_divider_ = true;
   name_prefix_ = "";
 
   // Header line.
   std::string result = what + " '" + resolveConfigName(data) + "':\n" +
-                       internal::printCenter(resolveConfigName(data), settings.width, '=') + "\n";
+                       internal::printCenter(resolveConfigName(data), print_width, '=') + "\n";
 
   // Format all checks and errors.
-  result += formatMissingRecursive(data, sev, settings.width);
-  return result + std::string(settings.width, '=');
+  result += formatMissingRecursive(data, sev, print_width);
+  return result + std::string(print_width, '=');
 }
 
 std::string AslFormatter::formatMissingRecursive(const MetaData& data, const std::string& sev, const size_t length) {
   const std::string name_prefix_before = name_prefix_;
-  const auto& settings = Settings::instance().printing;
-  if (settings.inline_subconfigs) {
+  if (Settings::instance().inline_subconfig_field_names) {
     if (!data.field_name.empty()) {
       // TOOD(nathan) refactor to put in metadata
       name_prefix_ += data.field_name;
@@ -149,11 +136,11 @@ std::string AslFormatter::formatMissingRecursive(const MetaData& data, const std
   }
 
   // Add more dividers if necessary.
-  if (!settings.inline_subconfigs && !result.empty()) {
+  if (!Settings::instance().inline_subconfig_field_names && !result.empty()) {
     if (is_first_divider_) {
       is_first_divider_ = false;
     } else {
-      result = internal::printCenter(resolveConfigName(data), settings.width, '-') + "\n" + result;
+      result = internal::printCenter(resolveConfigName(data), Settings::instance().print_width, '-') + "\n" + result;
     }
   }
 
@@ -175,9 +162,8 @@ std::string AslFormatter::formatChecksInternal(const MetaData& data, const std::
     }
     const std::string rendered_name = check->name().empty() ? "" : " for '" + name_prefix_ + check->name() + "'";
     const std::string rendered_num =
-        Settings::instance().printing.show_num_checks
-            ? "[" + std::to_string(current_check_) + "/" + std::to_string(total_num_checks_) + "] "
-            : "";
+        indicate_num_checks_ ? "[" + std::to_string(current_check_) + "/" + std::to_string(total_num_checks_) + "] "
+                             : "";
     const std::string msg = sev + "Check " + rendered_num + "failed" + rendered_name + ": " + check->message() + ".";
     result.append(wrapString(msg, length, sev.length(), false) + "\n");
   }
@@ -195,9 +181,8 @@ std::string AslFormatter::formatErrorsInternal(const MetaData& data, const std::
 }
 
 std::string AslFormatter::formatConfigImpl(const MetaData& data) {
-  const auto& settings = Settings::instance().printing;
-  return internal::printCenter(resolveConfigName(data), settings.width, '=') + "\n" + toStringInternal(data, 0) +
-         std::string(settings.width, '=');
+  return internal::printCenter(resolveConfigName(data), Settings::instance().print_width, '=') + "\n" +
+         toStringInternal(data, 0) + std::string(Settings::instance().print_width, '=');
 }
 
 std::string AslFormatter::formatConfigsImpl(const std::vector<MetaData>& data) {
@@ -210,7 +195,7 @@ std::string AslFormatter::formatConfigsImpl(const std::vector<MetaData>& data) {
     entry.erase(entry.find_last_of("\n"));
     result += entry + "\n";
   }
-  result += std::string(Settings::instance().printing.width, '=');
+  result += std::string(Settings::instance().print_width, '=');
   return result;
 }
 
@@ -226,7 +211,6 @@ std::string AslFormatter::toStringInternal(const MetaData& data, size_t indent) 
 }
 
 std::string AslFormatter::formatSubconfig(const MetaData& data, size_t indent) const {
-  const auto& settings = Settings::instance().printing;
   // Header.
   std::string header = std::string(indent, ' ') + data.field_name;
   // TODO(nathan) refactor into metadata
@@ -235,13 +219,13 @@ std::string AslFormatter::formatSubconfig(const MetaData& data, size_t indent) c
   } else if (data.map_config_key) {
     header += "[" + *data.map_config_key + "]";
   }
-  if (settings.show_subconfig_types) {
+  if (indicate_subconfig_types_) {
     header += " [" + resolveConfigName(data) + "]";
   }
-  if (settings.show_defaults && !data.isVirtualConfig()) {
+  if (Settings::instance().indicate_default_values && indicate_subconfig_default_ && !data.is_virtual_config) {
     bool is_default = true;
     for (const FieldInfo& info : data.field_infos) {
-      if (!info.isDefault()) {
+      if (!info.is_default) {
         is_default = false;
         break;
       }
@@ -250,24 +234,26 @@ std::string AslFormatter::formatSubconfig(const MetaData& data, size_t indent) c
       header += " (default)";
     }
   }
-  if (resolveConfigName(data) != kUninitializedVirtualConfigType) {
+  if (resolveConfigName(data) != "Uninitialized Virtual Config") {
     header += ":";
   }
   header += "\n";
-  return header + toStringInternal(data, indent + settings.subconfig_indent);
+  return header + toStringInternal(data, indent + Settings::instance().subconfig_indent);
 }
 
 std::string AslFormatter::formatField(const FieldInfo& info, size_t indent) const {
   std::string result;
-  const auto& settings = Settings::instance().printing;
+  const size_t print_width = Settings::instance().print_width;
+  const size_t global_indent = Settings::instance().print_indent;
+  const auto reformat_floats = Settings::instance().reformat_floats;
 
   // field is the stringified value, The header is the field name.
-  std::string field = yamlToString(info.value, settings.reformat_floats);
-  if (info.isDefault() && Settings::instance().printing.show_defaults) {
+  std::string field = dataToString(info.value, reformat_floats);
+  if (info.is_default && Settings::instance().indicate_default_values) {
     field += " (default)";
   }
   std::string header = std::string(indent, ' ') + info.name;
-  if (settings.show_units && !info.unit.empty()) {
+  if (Settings::instance().indicate_units && !info.unit.empty()) {
     header += " [" + info.unit + "]";
   }
   header += ":";
@@ -293,17 +279,17 @@ std::string AslFormatter::formatField(const FieldInfo& info, size_t indent) cons
   }
 
   // Format the header to width.
-  result += wrapString(header, settings.width, indent, false);
+  result += wrapString(header, print_width, indent, false);
   const size_t last_header_line = result.find_last_of('\n');
   size_t header_size = result.substr(last_header_line != std::string::npos ? last_header_line + 1 : 0).size();
-  if (header_size < settings.indent) {
-    result += std::string(settings.indent - header_size, ' ');
-    header_size = settings.indent;
-  } else if (settings.width - header_size - 1 < field.length() || is_multiline) {
+  if (header_size < global_indent) {
+    result += std::string(global_indent - header_size, ' ');
+    header_size = global_indent;
+  } else if (print_width - header_size - 1 < field.length() || is_multiline) {
     // If the field does not fit entirely or is multi-line anyways just start a new line.
     result = pruneTrailingWhitespace(result);
-    result += "\n" + std::string(settings.indent, ' ');
-    header_size = settings.indent;
+    result += "\n" + std::string(global_indent, ' ');
+    header_size = global_indent;
   } else {
     // If the field fits partly on the same line, add a space after the header.
     result += " ";
@@ -311,7 +297,7 @@ std::string AslFormatter::formatField(const FieldInfo& info, size_t indent) cons
   }
 
   // First line of field could be shorter due to header over extension.
-  const size_t available_length = settings.width - header_size;
+  const size_t available_length = print_width - header_size;
   if (is_multiline) {
     // Multiline fields need formatting but start at new lines anyways.
     size_t prev_break = 0;
@@ -322,9 +308,9 @@ std::string AslFormatter::formatField(const FieldInfo& info, size_t indent) cons
                         std::count_if(closed_brackets.begin(), closed_brackets.end(), isBefore);
       std::string line = field.substr(prev_break, linebreak - prev_break + 2);
       line = std::string(num_open, ' ') + line;
-      line = wrapString(line, settings.width, settings.indent) + "\n";
+      line = wrapString(line, print_width, global_indent) + "\n";
       if (prev_break == 0) {
-        line = line.substr(settings.indent);
+        line = line.substr(global_indent);
       }
       result += pruneTrailingWhitespace(line);
       prev_break = linebreak + 3;
@@ -335,22 +321,20 @@ std::string AslFormatter::formatField(const FieldInfo& info, size_t indent) cons
   } else {
     // Add as much as fits on the first line and fill the rest.
     result += pruneTrailingWhitespace(field.substr(0, available_length)) + "\n";
-    result +=
-        wrapString(pruneLeadingWhitespace(field.substr(available_length)), settings.width, settings.indent) + "\n";
+    result += wrapString(pruneLeadingWhitespace(field.substr(available_length)), print_width, global_indent) + "\n";
   }
   return result;
 }
 
 std::string AslFormatter::resolveConfigName(const MetaData& data) const {
   if (data.name.empty()) {
-    if (data.isVirtualConfig()) {
-      // NOTE(lschmid): Here we use the human readable name of the virtual config type if the token were to get changed.
+    if (data.is_virtual_config) {
       return "Uninitialized Virtual Config";
     } else {
       return "Unnamed Config";
     }
   } else {
-    if (data.isVirtualConfig() && Settings::instance().printing.show_virtual_configs) {
+    if (data.is_virtual_config && indicate_virtual_configs_) {
       return "Virtual Config: " + data.name;
     } else {
       return data.name;

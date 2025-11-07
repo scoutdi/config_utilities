@@ -35,37 +35,7 @@
 
 #include "config_utilities/types/path.h"
 
-#include <cstdlib>
-
 namespace config {
-namespace {
-
-inline std::filesystem::path normalize_path(const std::filesystem::path& path, std::string& error) {
-  std::string raw_path = path.string();
-  if (!raw_path.empty() && raw_path[0] == '~') {
-    const std::string home = std::getenv("HOME");
-    if (home.empty()) {
-      error = "Could not expand '~' for '" + raw_path + "'";
-    }
-
-    // handle unnormalized leadings slashes
-    const auto suffix = std::filesystem::relative(raw_path.substr(1), std::filesystem::path("/"));
-    raw_path = (std::filesystem::path(home) / suffix).string();
-  }
-
-  auto normed_path = std::filesystem::path(raw_path).lexically_normal();
-  if (!normed_path.empty()) {
-    try {
-      normed_path = std::filesystem::absolute(normed_path);
-    } catch (const std::filesystem::filesystem_error& e) {
-      error = "Could not get absolute path for '" + normed_path.string() + "': " + e.what();
-    }
-  }
-
-  return normed_path;
-}
-
-}  // namespace
 
 std::string Path::toIntermediate(const std::filesystem::path& value, std::string&) {
   return value.lexically_normal().string();
@@ -81,26 +51,6 @@ std::string Path::toIntermediate(std::string value, std::string&) {
 
 void Path::fromIntermediate(const std::string& intermediate, std::string& value, std::string&) {
   value = std::filesystem::path(intermediate).lexically_normal().string();
-}
-
-std::string Path::Absolute::toIntermediate(const std::filesystem::path& value, std::string& error) {
-  return normalize_path(value, error).string();
-}
-
-void Path::Absolute::fromIntermediate(const std::string& intermediate,
-                                      std::filesystem::path& value,
-                                      std::string& error) {
-  value = normalize_path(intermediate, error);
-}
-
-std::string Path::Absolute::toIntermediate(std::string value, std::string& error) {
-  return Path::Absolute::toIntermediate(std::filesystem::path(value), error);
-}
-
-void Path::Absolute::fromIntermediate(const std::string& intermediate, std::string& value, std::string& error) {
-  std::filesystem::path temp_path;
-  Path::Absolute::fromIntermediate(intermediate, temp_path, error);
-  value = temp_path.string();
 }
 
 bool Path::IsSet::valid() const { return !path_.empty(); }

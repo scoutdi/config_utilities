@@ -47,13 +47,7 @@
 
 namespace config::test {
 
-/**
- * @brief Compare two YAML nodes for equality.
- * @param a The first node.
- * @param b The second node.
- * @param epsilon The tolerance for floating point comparisons.
- */
-bool expectEqual(const YAML::Node& a, const YAML::Node& b, double epsilon = 0.0);
+bool expectEqual(const YAML::Node& a, const YAML::Node& b);
 
 class TestLogger : public internal::Logger {
  public:
@@ -79,21 +73,6 @@ class TestLogger : public internal::Logger {
   Messages messages_;
 
   inline static const auto registration_ = Registration<internal::Logger, TestLogger>("test_logger");
-};
-
-template <class BaseT, class DerivedT, class ConfigT, typename... Args>
-struct RegistrationGuard {
-  explicit RegistrationGuard(const std::string& type) : type(type) {
-    internal::ConfigFactory<BaseT>::template addEntry<ConfigT>(type);
-    internal::ObjectWithConfigFactory<BaseT, Args...>::template addEntry<DerivedT, ConfigT>(type);
-  }
-
-  ~RegistrationGuard() {
-    internal::ConfigFactory<BaseT>::template removeEntry<ConfigT>(type);
-    internal::ObjectWithConfigFactory<BaseT, Args...>::removeEntry(type);
-  }
-
-  std::string type;
 };
 
 }  // namespace config::test

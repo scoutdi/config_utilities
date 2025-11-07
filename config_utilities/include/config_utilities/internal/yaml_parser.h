@@ -37,7 +37,6 @@
 
 #include <limits>
 #include <map>
-#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -61,29 +60,6 @@ class YamlParser {
   ~YamlParser() = default;
 
   /**
-   * @brief Parse a single node to a value. If the conversion fails, a warning is issued and the value is not modified.
-   * @param node The yaml node to parse the value from.
-   * @param error Optional: Where to store the error message if conversion fails.
-   */
-  template <typename T>
-  static std::optional<T> fromYaml(const YAML::Node& node, std::string* error = nullptr) {
-    auto value = T();
-    std::string err;
-    try {
-      fromYamlImpl(value, node, err);
-    } catch (const std::exception& e) {
-      err = std::string(e.what());
-    }
-    if (!err.empty()) {
-      if (error) {
-        *error = err;
-      }
-      return std::nullopt;
-    }
-    return value;
-  }
-
-  /**
    * @brief Parse a value from the yaml node. If the value is not found, the value is not modified, and thus should
    * remain the default value. If the value is found, but the conversion fails, a warning is issued and the value is
    * not modified.
@@ -93,7 +69,7 @@ class YamlParser {
    * @param name Name of the param to look up.
    * @param value Value to parse.
    * @param sub_namespace Sub-namespace of the param to look up in the node.
-   * @param error Where to store the error message if conversion fails. If successful, error will be empty.
+   * @param error Where to store the error message if conversion fails.
    * @return true If the value was found and successfully parsed.
    */
   template <typename T>
@@ -107,36 +83,12 @@ class YamlParser {
       // The param is not defined. This is not an error.
       return false;
     }
-    error.clear();
     try {
       fromYamlImpl(value, child_node, error);
     } catch (const std::exception& e) {
       error = std::string(e.what());
     }
     return error.empty();
-  }
-
-  /**
-   * @brief Parse a single value to the yaml node.
-   * @param value The value to parse.
-   * @param error Optional: Where to store the error message if conversion fails.
-   */
-  template <typename T>
-  static YAML::Node toYaml(const T& value, std::string* error = nullptr) {
-    YAML::Node node;
-    std::string err;
-    try {
-      node = toYamlImpl(value, err);
-    } catch (const std::exception& e) {
-      err = std::string(e.what());
-    }
-    if (!err.empty()) {
-      if (error) {
-        *error = err;
-      }
-      return YAML::Node(YAML::NodeType::Null);
-    }
-    return node;
   }
 
   /**
@@ -147,7 +99,7 @@ class YamlParser {
    * @param name Name of the param to store.
    * @param value Value to parse.
    * @param sub_namespace Sub-namespace of the param when adding it to the root node.
-   * @param error Where to store the error message if conversion fails. If successful, error will be empty.
+   * @param error Where to store the error message if conversion fails.
    * @return The yaml node the value was successfully parsed. Null-node if conversion failed.
    */
   template <typename T>
@@ -156,9 +108,8 @@ class YamlParser {
                            const std::string& sub_namespace,
                            std::string& error) {
     YAML::Node node;
-    error.clear();
     try {
-      node = toYamlImpl(value, error);
+      node = toYamlImpl(name, value, error);
     } catch (const std::exception& e) {
       error = std::string(e.what());
     }
@@ -167,28 +118,23 @@ class YamlParser {
       return YAML::Node(YAML::NodeType::Null);
     }
 
-    // Fix the namespacing and param name.
-    YAML::Node root_node;
-    root_node[name] = node;
-    moveDownNamespace(root_node, sub_namespace);
-    return root_node;
+    moveDownNamespace(node, sub_namespace);
+    return node;
   }
 
  private:
   // Generic types.
-  // NOTE(lschmid): fromYamlImpl may throw if an conversion error occurs, which will be caught in the public facing
-  // implementations.
   template <typename T,
             typename std::enable_if<!is_int<T>, bool>::type = true,
             typename std::enable_if<!std::is_floating_point<T>::value, bool>::type = true>
-  static void fromYamlImpl(T& value, const YAML::Node& node, std::string& /* error */) {
+  static void fromYamlImpl(T& value, const YAML::Node& node, std::string& error) {
     value = node.as<T>();
   }
 
   template <typename T>
-  static YAML::Node toYamlImpl(const T& value, std::string& /* error */) {
+  static YAML::Node toYamlImpl(const std::string& name, const T& value, std::string& error) {
     YAML::Node node;
-    node = value;
+    node[name] = value;
     return node;
   }
 
@@ -204,11 +150,11 @@ class YamlParser {
   }
 
   template <typename T>
-  static YAML::Node toYamlImpl(const std::vector<T>& value, std::string& /* error */) {
+  static YAML::Node toYamlImpl(const std::string& name, const std::vector<T>& value, std::string& error) {
     YAML::Node node;
-    node = YAML::Node(YAML::NodeType::Sequence);
+    node[name] = YAML::Node(YAML::NodeType::Sequence);
     for (const T& element : value) {
-      node.push_back(element);
+      node[name].push_back(element);
     }
     return node;
   }
@@ -225,7 +171,7 @@ class YamlParser {
     for (const auto& element : node) {
       const T& element_value = element.as<T>();
       if (value.find(element_value) != value.end()) {
-        repeated_entries.insert(yamlToString(element));
+        repeated_entries.insert(dataToString(element));
       } else {
         value.insert(element_value);
       }
@@ -241,11 +187,11 @@ class YamlParser {
   }
 
   template <typename T>
-  static YAML::Node toYamlImpl(const std::set<T>& value, std::string& /* error */) {
+  static YAML::Node toYamlImpl(const std::string& name, const std::set<T>& value, std::string& error) {
     YAML::Node node;
-    node = YAML::Node(YAML::NodeType::Sequence);
+    node[name] = YAML::Node(YAML::NodeType::Sequence);
     for (const T& element : value) {
-      node.push_back(element);
+      node[name].push_back(element);
     }
 
     return node;
@@ -262,18 +208,18 @@ class YamlParser {
   }
 
   template <typename K, typename V>
-  static YAML::Node toYamlImpl(const std::map<K, V>& value, std::string& /* error */) {
+  static YAML::Node toYamlImpl(const std::string& name, const std::map<K, V>& value, std::string& error) {
     YAML::Node node;
-    node = YAML::Node(YAML::NodeType::Map);
+    node[name] = YAML::Node(YAML::NodeType::Map);
     for (const auto& kv_pair : value) {
-      node[kv_pair.first] = kv_pair.second;
+      node[name][kv_pair.first] = kv_pair.second;
     }
     return node;
   }
 
   // Verify data overflow.
   template <typename T, typename std::enable_if<is_int<T>, bool>::type = true>
-  static bool checkIntRange(const YAML::Node& node, std::string& error) {
+  static bool checkIntRange(const T& value, const YAML::Node& node, std::string& error) {
     // NOTE(lschmid): We assume we don't get integers larger than 64 bit. Also bool, uchar, and string are checked
     // separately.
     const int64_t min = node.as<int64_t>();
@@ -296,7 +242,7 @@ class YamlParser {
   }
 
   template <typename T, typename std::enable_if<std::is_floating_point<T>::value, bool>::type = true>
-  static bool checkFloatRange(const YAML::Node& node, std::string& error) {
+  static bool checkFloatRange(const T& value, const YAML::Node& node, std::string& error) {
     const auto long_value = node.as<long double>();
     if (long_value > static_cast<long double>(std::numeric_limits<T>::max())) {
       std::stringstream ss;
@@ -318,7 +264,7 @@ class YamlParser {
             typename std::enable_if<is_int<T>, bool>::type = true,
             typename std::enable_if<!std::is_floating_point<T>::value, bool>::type = true>
   static void fromYamlImpl(T& value, const YAML::Node& node, std::string& error) {
-    if (!checkIntRange<T>(node, error)) {
+    if (!checkIntRange(value, node, error)) {
       return;
     }
     value = node.as<T>();
@@ -329,7 +275,7 @@ class YamlParser {
             typename std::enable_if<!is_int<T>, bool>::type = true,
             typename std::enable_if<std::is_floating_point<T>::value, bool>::type = true>
   static void fromYamlImpl(T& value, const YAML::Node& node, std::string& error) {
-    if (!checkFloatRange<T>(node, error)) {
+    if (!checkFloatRange(value, node, error)) {
       return;
     }
     value = node.as<T>();
@@ -337,7 +283,7 @@ class YamlParser {
 
   // Specialization for uint8 to not represent it as char but as number.
   static void fromYamlImpl(uint8_t& value, const YAML::Node& node, std::string& error);
-  static YAML::Node toYamlImpl(const uint8_t& value, std::string& error);
+  static YAML::Node toYamlImpl(const std::string& name, const uint8_t& value, std::string& error);
 };
 
 }  // namespace config::internal

@@ -33,11 +33,20 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  * -------------------------------------------------------------------------- */
 
+#include "config_utilities/factory.h"
 #include "config_utilities/formatting/asl.h"
 #include "config_utilities/internal/string_utils.h"
 #include "config_utilities/settings.h"
 
 namespace config::internal {
+namespace {
+
+// Factory registration to allow setting of formatters via Settings::setFormatter().
+static const auto registration = Registration<Formatter, AslFormatter>("asl");
+
+}  // namespace
+
+AslFormatter::Initializer::Initializer() { Formatter::setFormatter(std::make_unique<AslFormatter>()); }
 
 std::string AslFormatter::formatErrorsImpl(const MetaData& data,
                                            const std::string& what,
@@ -260,6 +269,11 @@ std::string AslFormatter::formatSubconfig(const MetaData& data, size_t indent) c
 std::string AslFormatter::formatField(const FieldInfo& info, size_t indent) const {
   std::string result;
   const auto& settings = Settings::instance().printing;
+
+  // Check meta fields for printing.
+  if (!settings.print_meta_fields && info.is_meta_field) {
+    return result;
+  }
 
   // field is the stringified value, The header is the field name.
   std::string field = yamlToString(info.value, settings.reformat_floats);

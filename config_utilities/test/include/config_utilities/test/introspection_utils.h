@@ -33,54 +33,16 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  * -------------------------------------------------------------------------- */
 
-#include "config_utilities/logging/log_to_stdout.h"
+#pragma once
 
-#include <exception>
-#include <iostream>
+#include <string>
 
-#include "config_utilities/factory.h"
+namespace config::test {
 
-namespace config::internal {
-namespace {
+inline static const std::string intro_dir = "config_introspection_output";
 
-// Factory registration to allow setting of formatters via Settings::setLogger().
-static const auto registration = Registration<Logger, StdoutLogger>("stdout");
+void reset();
 
-}  // namespace
+void disable();
 
-StdoutLogger::StdoutLogger(Severity min_severity, Severity stderr_severity)
-    : min_severity_(min_severity), stderr_severity_(stderr_severity) {}
-
-void StdoutLogger::logImpl(const Severity severity, const std::string& message) {
-  if (severity < min_severity_ && severity != Severity::kFatal) {
-    return;
-  }
-
-  std::stringstream ss;
-  switch (severity) {
-    case Severity::kInfo:
-      ss << "[INFO] " << message;
-      break;
-
-    case Severity::kWarning:
-      ss << "\033[33m[WARNING] " << message << "\033[0m";
-      break;
-
-    case Severity::kError:
-      ss << "\033[31m[ERROR] " << message << "\033[0m";
-      break;
-
-    case Severity::kFatal:
-      throw std::runtime_error(message);
-  }
-
-  if (severity < stderr_severity_) {
-    std::cout << ss.str() << std::endl;
-  } else {
-    std::cerr << ss.str() << std::endl;
-  }
-}
-
-StdoutLogger::Initializer::Initializer() { Logger::setLogger(std::make_shared<StdoutLogger>()); }
-
-}  // namespace config::internal
+}  // namespace config::test

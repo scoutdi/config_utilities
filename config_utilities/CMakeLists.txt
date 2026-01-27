@@ -16,6 +16,11 @@ option(CONFIG_UTILS_ENABLE_GLOG "Export glog and build related code" ON)
 option(CONFIG_UTILS_BUILD_TESTS "Build unit tests" ON)
 option(CONFIG_UTILS_BUILD_DEMOS "Build demo executables" ON)
 
+# Added by Scout to silence warnings
+add_compile_options(
+  -Wno-unused-but-set-variable -Wno-missing-field-initializers
+  -Wno-unused-but-set-parameter -Wno-unused-parameter)
+
 find_package(yaml-cpp REQUIRED)
 find_package(Boost REQUIRED COMPONENTS filesystem system)
 find_optional(roscpp CONFIG_UTILS_ENABLE_ROS)

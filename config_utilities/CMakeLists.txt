@@ -13,8 +13,8 @@ option(BUILD_SHARED_LIBS "Build shared libs" ON)
 option(CONFIG_UTILS_ENABLE_ROS "Export roscpp and build related code" ON)
 option(CONFIG_UTILS_ENABLE_EIGEN "Export Eigen and build related code" ON)
 option(CONFIG_UTILS_ENABLE_GLOG "Export glog and build related code" ON)
-option(CONFIG_UTILS_BUILD_TESTS "Build unit tests" ON)
-option(CONFIG_UTILS_BUILD_DEMOS "Build demo executables" ON)
+option(CONFIG_UTILS_BUILD_TESTS "Build unit tests" OFF)
+option(CONFIG_UTILS_BUILD_DEMOS "Build demo executables" OFF)
 
 # Added by Scout to silence warnings
 add_compile_options(
